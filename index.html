@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tamil Nadu Online Voting System</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(135deg, #1e3d59, #4ecdc4); /* light gradient background */
+  color: #000000; /* text color black for light background */
+  min-height: 100vh;
+}
+header {
+  background: rgba(0,0,0,0.6);
+  color: white;
+  text-align: center;
+  padding: 20px;
+  font-size: 1.5em;
+  font-weight: bold;
+}
+.container {
+  max-width: 750px;
+  margin: 30px auto;
+  background: #ffffff; /* white container */
+  padding: 25px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+input, select, button {
+  width: 95%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  margin-top: 8px;
+  background: #ffffff;
+  color: #000000;
+}
+button {
+  background: #1e3d59;
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: 0.3s;
+}
+button:hover {
+  background: #16324f;
+  transform: scale(1.05);
+}
+.form-line { margin-bottom: 20px; }
+.candidate { margin: 8px 0; font-size: 16px; }
+label { color: #000000; }
+.result { 
+  margin-top: 20px; 
+  padding: 15px; 
+  background: #f1f1f1; 
+  border-radius: 8px; 
+  color: #000000;
+}
+.flex-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* Chart container */
+#voteChart {
+  background: #ffffff; 
+  border-radius: 8px; 
+  padding: 10px;
+}
+</style>
+</head>
+<body>
+
+<header>
+  Tamil Nadu Online Voting System
+</header>
+
+<div class="container">
+  <form id="voteForm">
+    <div class="form-line">
+      <label for="voterName">Name:</label><br>
+      <input type="text" id="voterName" placeholder="Enter Your Name" required>
+    </div>
+
+    <div class="form-line">
+      <label for="districtSelect">District:</label><br>
+      <select id="districtSelect" required>
+        <option value="">Select District</option>
+      </select>
+    </div>
+
+    <div class="form-line">
+      <label for="boothSelect">Booth Number:</label><br>
+      <select id="boothSelect" required>
+        <option value="">Select Booth Number</option>
+      </select>
+    </div>
+
+    <div class="form-line">
+      <label>Vote for Party:</label><br>
+      <div class="candidate"><input type="radio" name="vote" value="DMK" id="dmk"><label for="dmk">DMK</label></div>
+      <div class="candidate"><input type="radio" name="vote" value="TVK" id="tvk"><label for="tvk">TVK</label></div>
+      <div class="candidate"><input type="radio" name="vote" value="ADMK" id="admk"><label for="admk">ADMK</label></div>
+      <div class="candidate"><input type="radio" name="vote" value="BJP" id="bjp"><label for="bjp">BJP</label></div>
+      <div class="candidate"><input type="radio" name="vote" value="NTK" id="ntk"><label for="ntk">NTK</label></div>
+    </div>
+
+    <div class="form-line flex-buttons">
+      <button type="submit">Submit Vote</button>
+      <button type="button" id="exportVotes">Export Results</button>
+    </div>
+  </form>
+
+  <div id="result" class="result" style="display:none;">
+    <h3>Voting Results</h3>
+    <p id="textResults"></p>
+    <canvas id="voteChart" width="400" height="200"></canvas>
+  </div>
+</div>
+
+<script>
+// ===== Districts =====
+const districts = [
+"Ariyalur","Chengalpattu","Chennai","Coimbatore","Cuddalore","Dharmapuri","Dindigul","Erode",
+"Kallakurichi","Kanchipuram","Kanyakumari","Karur","Krishnagiri","Madurai","Mayiladuthurai",
+"Nagapattinam","Namakkal","Nilgiris","Perambalur","Pudukkottai","Ramanathapuram","Ranipet",
+"Salem","Sivaganga","Tenkasi","Thanjavur","Theni","Thiruvallur","Thiruvarur","Thoothukudi",
+"Tiruchirappalli","Tirunelveli","Tiruppur","Tiruvannamalai","Vellore","Viluppuram","Virudhunagar",
+"Tirupattur"
+];
+
+// ===== Booth Numbers =====
+const booths = {};
+let boothStart = 101;
+districts.forEach(d => {
+  booths[d] = [];
+  for(let i=0;i<10;i++){
+    booths[d].push(String(boothStart++));
+  }
+});
+
+const districtSelect = document.getElementById('districtSelect');
+const boothSelect = document.getElementById('boothSelect');
+
+// Populate districts
+districts.forEach(d=>{
+  const option = document.createElement('option');
+  option.value = d; option.textContent = d;
+  districtSelect.appendChild(option);
+});
+
+// Update booths when district changes
+districtSelect.addEventListener('change', ()=>{
+  const district = districtSelect.value;
+  boothSelect.innerHTML = '<option value="">Select Booth Number</option>';
+  if(booths[district]){
+    booths[district].forEach(b=>{
+      const opt = document.createElement('option'); opt.value=b; opt.textContent=b;
+      boothSelect.appendChild(opt);
+    });
+  }
+});
+
+// ===== Votes Storage =====
+let votes = JSON.parse(localStorage.getItem('votes')) || {DMK:0, TVK:0, ADMK:0, BJP:0, NTK:0};
+let voterNames = JSON.parse(localStorage.getItem('voterNames')) || [];
+
+const form = document.getElementById('voteForm');
+const resultDiv = document.getElementById('result');
+const textResults = document.getElementById('textResults');
+const ctx = document.getElementById('voteChart').getContext('2d');
+
+// ===== Chart.js =====
+const voteChart = new Chart(ctx, {
+  type:'bar',
+  data:{labels:Object.keys(votes), datasets:[{label:'Votes (%)', data:[0,0,0,0,0], backgroundColor:['#1e3d59','#ff6b6b','#4ecdc4','#f4d35e','#ee6c4d']}]},
+  options:{responsive:true, scales:{y:{beginAtZero:true, title:{display:true,text:'Percentage (%)'}}}}
+});
+
+// ===== Update Results =====
+function updateResults(lastVoter='', lastVote='', lastDistrict='', lastBooth=''){
+  const total = votes.DMK+votes.TVK+votes.ADMK+votes.BJP+votes.NTK||1;
+  textResults.innerHTML = lastVoter
+    ? `${lastVoter} voted for ${lastVote} in ${lastDistrict}, Booth No. ${lastBooth}.<br><br>
+       DMK: ${votes.DMK} (${((votes.DMK/total)*100).toFixed(1)}%)<br>
+       TVK: ${votes.TVK} (${((votes.TVK/total)*100).toFixed(1)}%)<br>
+       ADMK: ${votes.ADMK} (${((votes.ADMK/total)*100).toFixed(1)}%)<br>
+       BJP: ${votes.BJP} (${((votes.BJP/total)*100).toFixed(1)}%)<br>
+       NTK: ${votes.NTK} (${((votes.NTK/total)*100).toFixed(1)}%)`
+    : `DMK: ${votes.DMK} (${((votes.DMK/total)*100).toFixed(1)}%)<br>
+       TVK: ${votes.TVK} (${((votes.TVK/total)*100).toFixed(1)}%)<br>
+       ADMK: ${votes.ADMK} (${((votes.ADMK/total)*100).toFixed(1)}%)<br>
+       BJP: ${votes.BJP} (${((votes.BJP/total)*100).toFixed(1)}%)<br>
+       NTK: ${votes.NTK} (${((votes.NTK/total)*100).toFixed(1)}%)`;
+  voteChart.data.datasets[0].data = [votes.DMK/total*100, votes.TVK/total*100, votes.ADMK/total*100, votes.BJP/total*100, votes.NTK/total*100];
+  voteChart.update();
+  resultDiv.style.display='block';
+}
+updateResults();
+
+// ===== Submit Form =====
+form.addEventListener('submit', e=>{
+  e.preventDefault();
+  const name = document.getElementById('voterName').value.trim();
+  const district = districtSelect.value;
+  const booth = boothSelect.value;
+  const selected = document.querySelector('input[name="vote"]:checked');
+
+  if(!name || !district || !booth || !selected){ alert("Fill all fields & select a party"); return; }
+  if(voterNames.includes(name.toLowerCase())){ alert("Already voted!"); return; }
+
+  voterNames.push(name.toLowerCase());
+  votes[selected.value] += 1;
+
+  localStorage.setItem('votes', JSON.stringify(votes));
+  localStorage.setItem('voterNames', JSON.stringify(voterNames));
+
+  updateResults(name, selected.value, district, booth);
+  form.reset();
+});
+
+// ===== Export Votes =====
+document.getElementById('exportVotes').addEventListener('click', ()=>{
+  const dataStr="data:text/json;charset=utf-8,"+encodeURIComponent(JSON.stringify(votes,null,2));
+  const dlAnchor=document.createElement('a'); dlAnchor.setAttribute("href",dataStr); dlAnchor.setAttribute("download","tamilnadu_votes.json"); dlAnchor.click();
+});
+</script>
+
+</body>
+</html>
